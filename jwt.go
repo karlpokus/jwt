@@ -14,6 +14,9 @@ import (
 	"github.com/fatih/color"
 )
 
+var ErrInvalidToken = errors.New("invalid token")
+var ErrBadClaims = errors.New("bad claims")
+
 type Token struct {
 	JWT               *jwt.Token
 	SignatureVerified bool
@@ -71,9 +74,6 @@ func (t *Token) String() string {
 	}
 	return ""
 }
-
-var ErrInvalidToken = errors.New("invalid token")
-var ErrBadClaims = errors.New("bad claims")
 
 func New(key *rsa.PrivateKey, claims jwt.Claims) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
