@@ -36,6 +36,10 @@ type JWKS struct {
 	Keys []JWKSKey `json:"keys"`
 }
 
+type OIDConfig struct {
+	JWKSURI string `json:"jwks_uri"`
+}
+
 func (t *Token) String() string {
 	c := color.New(color.FgMagenta, color.Bold)
 	header := t.JWT.Header
@@ -76,9 +80,12 @@ func (t *Token) String() string {
 	}
 	c.Println("CLAIMS")
 	for k, v := range claims {
-		num, ok := v.(float64)
-		if ok {
+		if num, ok := v.(float64); ok {
 			log.Printf("%s:%d", k, int(num))
+			continue
+		}
+		if t, ok := v.(bool); ok {
+			log.Printf("%s:%t", k, t)
 			continue
 		}
 		log.Printf("%s:%s", k, v)
@@ -102,9 +109,12 @@ func Verify(key *rsa.PublicKey, token string) error {
 	//   sig
 	//   claims: exp, nbf, iat, aud (requires an audience to check)
 	//   iss, sub
-	t, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+	keyFunc := func(t *jwt.Token) (any, error) {
 		return key, nil
-	})
+	}
+	// jwt.WithIssuer()
+	// jwt.WithAudience()
+	t, err := jwt.Parse(token, keyFunc, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
 	if err != nil {
 		return err
 	}
@@ -137,6 +147,7 @@ func Read(b []byte) (*Token, error) {
 	if err != nil {
 		return nil, err
 	}
+	// TODO: token algo and JWKS algo must match
 	key, err := assembleKey(jwks, t.Header)
 	if err != nil {
 		return nil, err
@@ -152,17 +163,17 @@ func Read(b []byte) (*Token, error) {
 }
 
 func getKeyMaterial(ctx context.Context, issuer string) (*JWKS, error) {
-	url := fmt.Sprintf("%s/%s", issuer, ".well-known/jwks.json")
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	url := fmt.Sprintf("%s/%s", issuer, ".well-known/openid-configuration")
+	b, err := getURL(ctx, url)
 	if err != nil {
 		return nil, err
 	}
-	res, err := http.DefaultClient.Do(req)
+	var conf OIDConfig
+	err = json.Unmarshal(b, &conf)
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
-	b, err := io.ReadAll(res.Body)
+	b, err = getURL(ctx, conf.JWKSURI)
 	if err != nil {
 		return nil, err
 	}
@@ -172,6 +183,19 @@ func getKeyMaterial(ctx context.Context, issuer string) (*JWKS, error) {
 		return nil, err
 	}
 	return &jwks, nil
+}
+
+func getURL(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	return io.ReadAll(res.Body)
 }
 
 func assembleKey(jwks *JWKS, header map[string]any) (*rsa.PublicKey, error) {
