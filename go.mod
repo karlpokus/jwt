@@ -1,6 +1,6 @@
 module github.com/karlpokus/jwt
 
-go 1.22.1
+go 1.23.6
 
 require (
 	github.com/fatih/color v1.17.0
